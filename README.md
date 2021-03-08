@@ -5,8 +5,8 @@ The transformer based image captioning uses the standard transformer architectur
 
 <p align="center">
 ### Transformer Architecture
-![](https://miro.medium.com/max/2880/1*BHzGVskWGS_3jEcYYi6miQ.png)
 </p>
+![](https://miro.medium.com/max/2880/1*BHzGVskWGS_3jEcYYi6miQ.png)
 
 The encoder takes a feature map from InceptionV3 (the second to last layer) in order to produce a (1,2048) feature map. The feature map is then sent to a CNN Encoder that takes these features and turns them into a (1,256) feature embedding. The feature embeddings are then sent to a customized Bahdanau Attention module that computes an attention matrix for the feature embeddings. This attantion matrix is then multiplied by the feature embeddings to produce an attention map on the original embedding. Finally, the attention-mapped feature embeddings are sent to a fully connected layer that transforms the dimensions of the attention-mapped feature embeddings to (1,256), so the dimensions are compatible with multiheaded attention unit of the decoder block.
 ## Inspiration
