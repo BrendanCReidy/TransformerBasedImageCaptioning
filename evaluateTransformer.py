@@ -32,6 +32,16 @@ annotation_folder = cocoPath + '/annotations'
 image_folder = cocoPath + '/train2017'
 annotation_file = annotation_folder + '/captions_train2017.json'
 
+embedding_dim = 256
+num_layers = 4
+d_model = 128
+dff = 512
+units = 512
+num_heads = 8
+dropout_rate = 0.1
+target_vocab_size = 10000
+maximum_position_encoding = 10000
+
 def load_image(image_path):
     img = tf.io.read_file(image_path)
     img = tf.image.decode_jpeg(img, channels=3)
@@ -72,26 +82,19 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     
     return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
 
-embedding_dim = 256
-units = 512
-num_heads = 8
-d_model = 128
-dff = 512
-target_vocab_size = 1000
-maximum_position_encoding = 1000
-
 learning_rate = CustomSchedule(d_model)
 optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, 
                                      epsilon=1e-9)
-
+                                    
 transformer = ImageLanguageTransformer.Transformer(
-    d_model = d_model,
-    num_heads = num_heads,
-    dff = dff,
-    embedding_dim = embedding_dim,
-    target_vocab_size = target_vocab_size,
-    maximum_position_encoding = maximum_position_encoding,
-    units = units
+    d_model=d_model,
+    num_heads=num_heads,
+    dff=dff,
+    embedding_dim=embedding_dim,
+    target_vocab_size=target_vocab_size,
+    maximum_position_encoding=maximum_position_encoding,
+    units=units,
+    num_layers=num_layers,
 )
 
 checkpoint_path = "./checkpoints/train"

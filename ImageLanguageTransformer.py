@@ -139,20 +139,16 @@ class BahdanauAttention(tf.keras.Model):
     # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
     # attention_hidden_layer shape == (batch_size, 64, units)
     attention_hidden_layer = (tf.nn.tanh(self.W1(features)))
-
     # score shape == (batch_size, 64, 1)
     # This gives you an unnormalized score for each image feature.
     score = self.V(attention_hidden_layer)
-
     # attention_weights shape == (batch_size, 64, 1)
     attention_weights = tf.nn.softmax(score, axis=1)
-
     # context_vector shape after sum == (batch_size, hidden_size)
     context_vector = attention_weights * features
-    context_vector = tf.reduce_sum(context_vector, axis=1)
-    
+    #context_vector = tf.reduce_sum(context_vector, axis=2)
 
-    return context_vector, attention_weights
+    return context_vector
 
 class CNN_Encoder(tf.keras.Model):
     # Since you have already extracted the features and dumped it using pickle
@@ -167,21 +163,49 @@ class CNN_Encoder(tf.keras.Model):
         x = tf.nn.relu(x)
         return x
 
+
+class EncoderLayer(tf.keras.Model):
+  def __init__(self, d_model, dff, units, rate=0.1):
+    super(EncoderLayer, self).__init__()
+    self.attention = BahdanauAttention(units)
+    self.layernorm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+    self.fnn = point_wise_feed_forward_network(d_model, dff)
+    
+    self.dropout1 = tf.keras.layers.Dropout(rate)
+    self.dropout2 = tf.keras.layers.Dropout(rate)
+
+  def call(self, x, training):
+
+    attn_output = self.attention(x)
+    attn_output = self.dropout1(attn_output, training=training)
+    out1 = self.layernorm(x + attn_output)
+
+    fnn_output = self.fnn(out1)
+    fnn_output = self.dropout2(fnn_output, training=training)
+
+    return fnn_output
+
+
 class EncoderBlock(tf.keras.Model):
-  def __init__(self, embedding_dim, units):
+  def __init__(self, embedding_dim, d_model, dff, units, num_layers, rate=0.1):
     super(EncoderBlock, self).__init__()
-    self.units = units
-    self.embedding_dim = embedding_dim
+    self.num_layers = num_layers
 
     self.embedding_model = CNN_Encoder(embedding_dim)
-    self.attention = BahdanauAttention(self.units)
+
+    self.enc_layers = [EncoderLayer(d_model, dff, units, rate)
+                          for _ in range(num_layers)]
+
     self.fc_out = tf.keras.layers.Dense(embedding_dim)
 
-  def call(self, x):
+  def call(self, x, training):
       features = self.embedding_model(x)
-      context_vector, attention_weights = self.attention(features)
-      out = self.fc_out(context_vector)
-      return out, features
+      
+      for i in range(self.num_layers):
+        features = self.enc_layers[i](features, training)
+
+      out = self.fc_out(features)
+      return out
 
 def point_wise_feed_forward_network(d_model, dff):
     return tf.keras.Sequential([
@@ -224,23 +248,17 @@ class DecoderBlock(tf.keras.Model):
         attn2, attn_weights_block2 = self.mha2(
         enc_out, enc_out, out1, mask=None)  # (batch_size, target_seq_len, d_model)
         attn2 = self.dropout2(attn2, training=training)
-        out2 = self.layernorm2(attn2 + out1)  
-
-        """
-        ffn_output = self.ffn(out2)  # (batch_size, target_seq_len, d_model)
-        ffn_output = self.dropout3(ffn_output, training=training)
-        out3 = self.layernorm3(ffn_output + out2)  # (batch_size, target_seq_len, d_model)
-        """
+        out2 = self.layernorm2(attn2 + out1)
         
         return out2, attn_weights_block1, attn_weights_block2
 
 
 class Transformer(tf.keras.Model):
   def __init__(self, d_model, num_heads, dff, embedding_dim, 
-               target_vocab_size, maximum_position_encoding, units, rate=0.1):
+               target_vocab_size, maximum_position_encoding, units, num_layers, rate=0.1):
     super(Transformer, self).__init__()
-    # EncoderBlock(embedding_dim, units):
-    self.encoder = EncoderBlock(embedding_dim, units)
+    # EncoderBlock(embedding_dim, d_model, dff, units
+    self.encoder = EncoderBlock(embedding_dim, d_model, dff, units, num_layers)
 
     # DecoderBlock(d_model, dff, num_heads, rate=0.1):
     self.decoder = DecoderBlock(d_model, dff, num_heads, target_vocab_size, maximum_position_encoding)
@@ -249,7 +267,7 @@ class Transformer(tf.keras.Model):
     
   def call(self, inp, dec_input, look_ahead_mask, training=True):
 
-    enc_output, feats = self.encoder(inp)  # (batch_size, inp_seq_len, d_model)
+    enc_output = self.encoder(inp)  # (batch_size, inp_seq_len, d_model)
     
     # dec_output.shape == (batch_size, tar_seq_len, d_model)
     dec_output, attnBlock1, attnBlock2 = self.decoder(dec_input, enc_output, training, look_ahead_mask)
